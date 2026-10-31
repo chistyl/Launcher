@@ -103,10 +103,10 @@ jobs:
           good = 'append("\\n");'
           if bad in s:
               s = s.replace(bad, good)
-              p.write_text(s, encoding="utf-8")
-              print("Repaired broken newline string literals in", p)
-          else:
-              print("No broken newline literals found in", p)
+          # Always write the patched source: system-folder fallback/import changes
+          # must be saved even when the weather string already uses escaped newlines.
+          p.write_text(s, encoding="utf-8")
+          print("Saved V17 source patches in", p)
           PY
           fi
           GRADLEW="$(find . -type f -path '*/launcher/gradlew' -print -quit)"
