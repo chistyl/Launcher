@@ -182,6 +182,118 @@ jobs:
           print("Patched system folder app lookup, Taiwan city geocoding fallback and rounded weather dialog:", p)
           PY
 
+      - name: Fix system folder package visibility and Taoyuan weather
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAIN_JAVA="$(find . -type f -name MainActivity.java -path '*/com/gathin/tvhome/*' -print -quit)"
+          MANIFEST="$(find . -type f -name AndroidManifest.xml -path '*/launcher/app/src/main/*' -print -quit)"
+          python3 - "$MAIN_JAVA" "$MANIFEST" <<'PY'
+          from pathlib import Path
+          import sys
+          jp, mp = Path(sys.argv[1]), Path(sys.argv[2])
+          s = jp.read_text(encoding="utf-8")
+          # System folder: enumerate installed system packages and resolve both TV and standard launchable activities.
+          old = '''            List<ResolveInfo> installed = getPackageManager().queryIntentActivities(
+                              new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0);'''
+          new = '''            PackageManager systemPm = getPackageManager();
+                      List<ApplicationInfo> installed = systemPm.getInstalledApplications(PackageManager.MATCH_ALL);'''
+          if old in s: s=s.replace(old,new,1)
+          elif "getInstalledApplications(PackageManager.MATCH_ALL)" not in s:
+              raise SystemExit("System folder installed-app enumeration block not found")
+          old = '''            for (ResolveInfo ri : installed) {
+                          if (ri.activityInfo == null || !ri.activityInfo.exported || ri.activityInfo.packageName.equals(getPackageName())) continue;
+                          try {
+                              int flags = getPackageManager().getApplicationInfo(ri.activityInfo.packageName, 0).flags;
+                              if ((flags & (ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
+                                      && !excluded.contains(ri.activityInfo.packageName)) current.add(ri.activityInfo.packageName);
+                          } catch (PackageManager.NameNotFoundException ignored) { }
+                      }'''
+          new = '''            for (ApplicationInfo app : installed) {
+                          if (app == null || app.packageName == null || app.packageName.equals(getPackageName())) continue;
+                          int flags = app.flags;
+                          if ((flags & (ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
+                                  && !excluded.contains(app.packageName)) {
+                              Intent tvIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER).setPackage(app.packageName);
+                              Intent phoneIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(app.packageName);
+                              List<ResolveInfo> tvMatches = systemPm.queryIntentActivities(tvIntent, PackageManager.MATCH_ALL);
+                              List<ResolveInfo> phoneMatches = systemPm.queryIntentActivities(phoneIntent, PackageManager.MATCH_ALL);
+                              if ((tvMatches != null && !tvMatches.isEmpty()) || (phoneMatches != null && !phoneMatches.isEmpty()))
+                                  current.add(app.packageName);
+                          }
+                      }'''
+          if old in s: s=s.replace(old,new,1)
+          elif "List<ResolveInfo> tvMatches" not in s:
+              raise SystemExit("System folder package filter block not found")
+          # Resolve apps per package with MATCH_ALL, avoiding relying only on the global launcher query.
+          old = '''            List<ResolveInfo> all = new ArrayList<>(allByPackage.values());'''
+          new = '''            List<ResolveInfo> all = new ArrayList<>(allByPackage.values());
+                  for (String packageName : members) {
+                      if (allByPackage.containsKey(packageName)) continue;
+                      Intent tvIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER).setPackage(packageName);
+                      Intent phoneIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(packageName);
+                      List<ResolveInfo> tvMatches = folderPm.queryIntentActivities(tvIntent, PackageManager.MATCH_ALL);
+                      List<ResolveInfo> phoneMatches = folderPm.queryIntentActivities(phoneIntent, PackageManager.MATCH_ALL);
+                      if (tvMatches != null && !tvMatches.isEmpty()) allByPackage.put(packageName, tvMatches.get(0));
+                      else if (phoneMatches != null && !phoneMatches.isEmpty()) allByPackage.put(packageName, phoneMatches.get(0));
+                  }
+                  all = new ArrayList<>(allByPackage.values());'''
+          if old in s: s=s.replace(old,new,1)
+          elif "for (String packageName : members)" not in s:
+              raise SystemExit("System folder package resolution insertion point not found")
+          # Use fixed Taiwan coordinates for common city names; Taoyuan no longer depends on geocoder localization.
+          start=s.find("    private void fetchCityForecast(String city) {")
+          end=s.find("    private void fetchForecast(", start)
+          if start < 0 or end < 0: raise SystemExit("Weather city method boundaries not found")
+          method='''    private void fetchCityForecast(String city) {
+                  try {
+                      String normalized = city == null ? "" : city.trim();
+                      double lat, lon;
+                      String display = normalized;
+                      if (normalized.contains("桃園") || normalized.equalsIgnoreCase("Taoyuan") || normalized.equalsIgnoreCase("Taoyuan City")) {
+                          lat = 24.9936; lon = 121.3010; display = "桃園市";
+                      } else if (normalized.contains("台北") || normalized.contains("臺北") || normalized.equalsIgnoreCase("Taipei")) {
+                          lat = 25.0330; lon = 121.5654; display = "台北市";
+                      } else if (normalized.contains("新北") || normalized.equalsIgnoreCase("New Taipei")) {
+                          lat = 25.0169; lon = 121.4628; display = "新北市";
+                      } else if (normalized.contains("台中") || normalized.contains("臺中") || normalized.equalsIgnoreCase("Taichung")) {
+                          lat = 24.1477; lon = 120.6736; display = "台中市";
+                      } else if (normalized.contains("台南") || normalized.contains("臺南") || normalized.equalsIgnoreCase("Tainan")) {
+                          lat = 22.9999; lon = 120.2269; display = "台南市";
+                      } else if (normalized.contains("高雄") || normalized.equalsIgnoreCase("Kaohsiung")) {
+                          lat = 22.6273; lon = 120.3014; display = "高雄市";
+                      } else {
+                          String q = URLEncoder.encode(normalized, "UTF-8");
+                          JSONObject geo = getJson("https://geocoding-api.open-meteo.com/v1/search?name=" + q + "&count=20&language=en&format=json");
+                          JSONArray results = geo.optJSONArray("results");
+                          if (results == null || results.length() == 0) throw new IOException("找不到城市：" + city);
+                          JSONObject place = null;
+                          for (int i = 0; i < results.length(); i++) {
+                              JSONObject candidate = results.getJSONObject(i);
+                              if ("TW".equalsIgnoreCase(candidate.optString("country_code"))) { place = candidate; break; }
+                          }
+                          if (place == null) place = results.getJSONObject(0);
+                          lat = place.getDouble("latitude"); lon = place.getDouble("longitude");
+                      }
+                      fetchForecast(lat, lon, display);
+                  } catch (Exception e) { showWeatherError("城市定位失敗：" + e.getMessage()); }
+              }
+
+          '''
+          s=s[:start]+method+s[end:]
+          jp.write_text(s,encoding="utf-8")
+          m=mp.read_text(encoding="utf-8")
+          if "android.permission.QUERY_ALL_PACKAGES" not in m:
+              m=m.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android"',
+                          '<manifest xmlns:android="http://schemas.android.com/apk/res/android"',1)
+              insert='    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />\n'
+              pos=m.find("    <application")
+              if pos < 0: raise SystemExit("Manifest application node not found")
+              m=m[:pos]+insert+m[pos:]
+          mp.write_text(m,encoding="utf-8")
+          print("Fixed system folder package enumeration and direct Taiwan city coordinates")
+          PY
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
