@@ -1,10 +1,11 @@
-name: Build CleanYourTV V12 APK
+name: Build CleanYourTV V13 APK
 
 on:
   workflow_dispatch:
   push:
     paths:
       - 'CleanYourTV-V12-folder-longpress-update.zip'
+      - 'Launcher-V13-source.zip'
       - 'cleanyourtv-main/**'
       - '.github/workflows/android-build.yml'
 
@@ -22,11 +23,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f CleanYourTV-V12-folder-longpress-update.zip ]; then
+          if [ -f Launcher-V13-source.zip ]; then
+            unzip -q -o Launcher-V13-source.zip -d .
+          elif [ -f CleanYourTV-V12-folder-longpress-update.zip ]; then
             unzip -q -o CleanYourTV-V12-folder-longpress-update.zip -d .
           fi
           if [ ! -f cleanyourtv-main/launcher/gradlew ]; then
-            echo "::error::V12 source is missing. The ZIP must contain cleanyourtv-main/launcher/gradlew."
+            echo "::error::V13 source is missing. The ZIP must contain cleanyourtv-main/launcher/gradlew."
             exit 1
           fi
           chmod +x cleanyourtv-main/launcher/gradlew
@@ -56,7 +59,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CleanYourTV-V12-debug-apk
+          name: CleanYourTV-V13-debug-apk
           path: cleanyourtv-main/launcher/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
