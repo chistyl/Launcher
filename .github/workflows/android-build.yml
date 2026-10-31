@@ -38,8 +38,57 @@ jobs:
           s = p.read_text(encoding="utf-8")
           # Correct literal backslash-n sequences in forecast lines.
           s = s.replace('append("\\\\n");', 'append("\\n");')
-          # Ensure source changes are persisted even if no weather replacement was needed.
+          # Restore V16.8's known-working system-folder enumeration.
+          import re
+          old_block = re.compile(r'        if \(systemFolder\) \{\n            // Enumerate installed packages first,[\s\S]*?            members = current;\n        \} else \{', re.M)
+          new_block = """        if (systemFolder) {
+                      List<ResolveInfo> installed = getPackageManager().queryIntentActivities(
+                              new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0);
+                      java.util.HashSet<String> current = new java.util.HashSet<>(prefs.getStringSet(
+                              "system_folder_added", java.util.Collections.<String>emptySet()));
+                      Set<String> excluded = prefs.getStringSet("system_folder_excluded", java.util.Collections.<String>emptySet());
+                      for (ResolveInfo ri : installed) {
+                          if (ri.activityInfo == null || !ri.activityInfo.exported || ri.activityInfo.packageName.equals(getPackageName())) continue;
+                          try {
+                              int flags = getPackageManager().getApplicationInfo(ri.activityInfo.packageName, 0).flags;
+                              if ((flags & (ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
+                                      && !excluded.contains(ri.activityInfo.packageName)) current.add(ri.activityInfo.packageName);
+                          } catch (PackageManager.NameNotFoundException ignored) { }
+                      }
+                      members = current;
+                  } else {"""
+          s, count = old_block.subn(new_block, s, count=1)
+          print("V16.8 system-folder block replacements:", count)
+          # Use fixed-width tiles as in V16.8 so GridLayout does not collapse weighted cells on TV firmware.
+          s = re.sub(r'android\.widget\.GridLayout\.LayoutParams lp = new android\.widget\.GridLayout\.LayoutParams\(\s*android\.widget\.GridLayout\.spec\(grid\.getChildCount\(\) % folderColumns, 1, 1f\),\s*android\.widget\.GridLayout\.spec\(android\.widget\.GridLayout\.UNDEFINED\)\);\s*lp\.width = 0;[^\n]*',
+                     'android.widget.GridLayout.LayoutParams lp = new android.widget.GridLayout.LayoutParams();\\n                lp.width = (int)(folderTileDp*density);', s)
+          # Add a weather glyph next to the condition label.
+          s = s.replace('.append(day).append("  ").append(weatherLabel(code))',
+                        '.append(day).append("  ").append(weatherIcon(code)).append("  ").append(weatherLabel(code))')
+          if "private String weatherIcon(int code)" not in s:
+              helper = """    private String weatherIcon(int code) {
+                  if (code == 0) return "☀️";
+                  if (code == 1 || code == 2) return "🌤️";
+                  if (code == 3) return "☁️";
+                  if (code == 45 || code == 48) return "🌫️";
+                  if (code >= 51 && code <= 67) return "🌧️";
+                  if (code >= 71 && code <= 77) return "❄️";
+                  if (code >= 80 && code <= 82) return "🌦️";
+                  if (code >= 95) return "⛈️";
+                  return "🌡️";
+              }
+
+          """
+              s = s.replace("    private String weatherLabel(int code)", helper + "    private String weatherLabel(int code)", 1)
           p.write_text(s, encoding="utf-8")
+          # Keep Wi-Fi/settings at the top of the header instead of bottom-aligning with the taller weather block.
+          for xml in p.parent.parent.parent.glob("**/res/layout/activity_main.xml"):
+              x = xml.read_text(encoding="utf-8")
+              x = x.replace('android:layout_alignBottom="@id/leftBlock"\\n                android:layout_marginBottom="6dp"',
+                            'android:layout_alignParentTop="true"\\n                android:layout_marginTop="10dp"')
+              xml.write_text(x, encoding="utf-8")
+          print("Applied V16.8 folder, weather icons, and top-button positioning.")
+
           print("Prepared source:", p)
           PY
           GRADLEW="$(find . -type f -path '*/launcher/gradlew' -print -quit)"
