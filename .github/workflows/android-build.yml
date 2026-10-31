@@ -4,20 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'CleanYourTV-V12-folder-longpress-update.zip'
-      - 'Launcher-V13-source.zip'
-      - 'Launcher-V14-update-source.zip'
-      - 'Launcher-V15-update-source.zip'
-      - 'Launcher-V16.1-update-source.zip'
-      - 'Launcher-V16.2-update-source.zip'
-      - 'Launcher-V16.4-update-source.zip'
-      - 'Launcher-V16.5-update-source.zip'
-      - 'Launcher-V16.7-update-source.zip'
-      - 'Launcher-V16.8-update-source.zip'
-      - 'V16.9-source-download (1).zip'
-      - 'V16.9-source-fixed-v3.zip'
       - 'CleanYourTV-V17-source.zip'
-      - 'cleanyourtv-main/**'
       - '.github/workflows/android-build.yml'
 
 permissions:
@@ -27,139 +14,38 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Prepare source
+      - name: Prepare V17 source
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f 'CleanYourTV-V17-source.zip' ]; then
-            unzip -q -o 'CleanYourTV-V17-source.zip' -d .
-          elif [ -f 'V16.9-source-fixed-v3.zip' ]; then
-            unzip -q -o 'V16.9-source-fixed-v3.zip' -d .
-          elif [ -f 'V16.9-source-download (1).zip' ]; then
-            unzip -q -o 'V16.9-source-download (1).zip' -d .
-          elif [ -f Launcher-V16.8-update-source.zip ]; then
-            unzip -q -o Launcher-V16.8-update-source.zip -d .
-          elif [ -f Launcher-V16.7-update-source.zip ]; then
-            unzip -q -o Launcher-V16.7-update-source.zip -d .
-          elif [ -f Launcher-V16.5-update-source.zip ]; then
-            unzip -q -o Launcher-V16.5-update-source.zip -d .
-          elif [ -f Launcher-V16.4-update-source.zip ]; then
-            unzip -q -o Launcher-V16.4-update-source.zip -d .
-          elif [ -f Launcher-V16.2-update-source.zip ]; then
-            unzip -q -o Launcher-V16.2-update-source.zip -d .
-          elif [ -f Launcher-V16.1-update-source.zip ]; then
-            unzip -q -o Launcher-V16.1-update-source.zip -d .
-          elif [ -f Launcher-V15-update-source.zip ]; then
-            unzip -q -o Launcher-V15-update-source.zip -d .
-          elif [ -f Launcher-V14-update-source.zip ]; then
-            unzip -q -o Launcher-V14-update-source.zip -d .
-          elif [ -f Launcher-V13-source.zip ]; then
-            unzip -q -o Launcher-V13-source.zip -d .
-          elif [ -f CleanYourTV-V12-folder-longpress-update.zip ]; then
-            unzip -q -o CleanYourTV-V12-folder-longpress-update.zip -d .
+          if [ ! -f "CleanYourTV-V17-source.zip" ]; then
+            echo "::error::CleanYourTV-V17-source.zip is missing from this branch."
+            exit 1
           fi
-          # Repair literal line breaks accidentally embedded inside Java string literals in the weather panel.
+          unzip -q -o "CleanYourTV-V17-source.zip" -d .
           MAIN_JAVA="$(find . -type f -name MainActivity.java -path '*/com/gathin/tvhome/*' -print -quit)"
-          if [ -n "$MAIN_JAVA" ]; then
-            python3 - "$MAIN_JAVA" <<'PY'
+          if [ -z "$MAIN_JAVA" ]; then
+            echo "::error::MainActivity.java was not found."
+            exit 1
+          fi
+          python3 - "$MAIN_JAVA" <<'PY'
           from pathlib import Path
           import sys
           p = Path(sys.argv[1])
           s = p.read_text(encoding="utf-8")
-          # Fix Java strings that were double-escaped and displayed literal \\n.
+          # Correct literal backslash-n sequences in forecast lines.
           s = s.replace('append("\\\\n");', 'append("\\n");')
-          # Keep imports and direct system-folder fallback in sync with the patched V17 source.
-          import_line = "import android.content.pm.PackageManager;"
-          activity_import = "import android.content.pm.ActivityInfo;"
-          if activity_import not in s:
-              s = s.replace(import_line, import_line + "\n" + activity_import)
-          marker = "        Dialog dialog = new Dialog(this);\\n        LinearLayout outer = new LinearLayout(this);"
-          fallback = "\\n".join([
-              "        // Some TV firmware exposes installed system apps through getLaunchIntentForPackage()",
-              "        // but omits them from LAUNCHER and LEANBACK_LAUNCHER category queries.",
-              "        // Resolve each remaining system-folder member directly so the folder does not appear empty.",
-              "        if (systemFolder) {",
-              "            for (String pkg : members) {",
-              '                if (matches.containsKey(pkg) || prefs.getBoolean("home_hidden_" + pkg, false)) continue',
-              "                try {",
-              "                    Intent launchIntent = folderPm.getLaunchIntentForPackage(pkg);",
-              "                    if (launchIntent == null || launchIntent.getComponent() == null) continue;",
-              "                    ActivityInfo activity = folderPm.getActivityInfo(launchIntent.getComponent(), 0);",
-              "                    if (activity == null || !activity.exported) continue;",
-              "                    ResolveInfo fallbackInfo = new ResolveInfo();",
-              "                    fallbackInfo.activityInfo = activity;",
-              "                    matches.put(pkg, fallbackInfo);",
-              "                } catch (PackageManager.NameNotFoundException | RuntimeException ignored) { }",
-              "            }",
-              "        }",
-              "",
-          ])
-          if marker in s and "Resolve each remaining system-folder member directly" not in s:
-              s = s.replace(marker, fallback + marker, 1)
-          bad = 'append("' + chr(10) + '");'
-          good = 'append("\\n");'
-          if bad in s:
-              s = s.replace(bad, good)
-          # Always write the patched source: system-folder fallback/import changes
-          # must be saved even when the weather string already uses escaped newlines.
-          # Restore V16.8's proven TV-launcher enumeration for the system folder.
-          import re
-          s = re.sub(r'if \\(systemFolder\\) \\{\\s*// Enumerate installed packages first,[\\s\\S]*?members = current;\\s*\\} else \\{', '''if (systemFolder) {
-              List<ResolveInfo> installed = getPackageManager().queryIntentActivities(
-                      new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0);
-              java.util.HashSet<String> current = new java.util.HashSet<>(prefs.getStringSet(
-                      "system_folder_added", java.util.Collections.<String>emptySet()));
-              Set<String> excluded = prefs.getStringSet("system_folder_excluded", java.util.Collections.<String>emptySet());
-              for (ResolveInfo ri : installed) {
-                  if (ri.activityInfo == null || !ri.activityInfo.exported || ri.activityInfo.packageName.equals(getPackageName())) continue;
-                  try {
-                      int flags = getPackageManager().getApplicationInfo(ri.activityInfo.packageName, 0).flags;
-                      if ((flags & (ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
-                              && !excluded.contains(ri.activityInfo.packageName)) current.add(ri.activityInfo.packageName);
-                  } catch (PackageManager.NameNotFoundException ignored) { }
-              }
-              members = current;
-          } else {''', s, count=1)
-          # Keep the working V16.8 fixed-width GridLayout cells; weighted row specs hid folder contents on some TV launchers.
-          s = s.replace('''android.widget.GridLayout.LayoutParams lp = new android.widget.GridLayout.LayoutParams(
-                        android.widget.GridLayout.spec(grid.getChildCount() % folderColumns, 1, 1f),
-                        android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED));
-                lp.width = 0; // 依欄位權重平均分配寬度，左右間距自然一致。''', '''android.widget.GridLayout.LayoutParams lp = new android.widget.GridLayout.LayoutParams();
-                lp.width = (int)(folderTileDp*density);''')
-          # Add a weather glyph beside each forecast day.
-          s = s.replace('.append(day).append("  ").append(weatherLabel(code))', '.append(day).append("  ").append(weatherIcon(code)).append("  ").append(weatherLabel(code))')
-          if "private String weatherIcon(int code)" not in s:
-              helper = '''    private String weatherIcon(int code) {
-          if (code == 0) return "☀️";
-          if (code == 1 || code == 2) return "🌤️";
-          if (code == 3) return "☁️";
-          if (code == 45 || code == 48) return "🌫️";
-          if (code >= 51 && code <= 67) return "🌧️";
-          if (code >= 71 && code <= 77) return "❄️";
-          if (code >= 80 && code <= 82) return "🌦️";
-          if (code >= 95) return "⛈️";
-          return "🌡️";
-      }
-
-'''
-              s = s.replace('    private JSONObject getJson(String address)', helper + '    private JSONObject getJson(String address)', 1)
+          # Ensure source changes are persisted even if no weather replacement was needed.
           p.write_text(s, encoding="utf-8")
-          # Move the top-right Wi-Fi/settings controls to the top edge instead of the bottom of the expanded weather block.
-          for xml in p.parents[0].parents[0].glob("**/res/layout/activity_main.xml"):
-              x = xml.read_text(encoding="utf-8")
-              x = re.sub(r'(android:id="@\\+id/topButtons"[\\s\\S]*?)android:layout_alignBottom="@id/leftBlock"', r'\\1android:layout_alignParentTop="true"', x, count=1)
-              x = x.replace('android:layout_marginBottom="6dp"', 'android:layout_marginTop="10dp"', 1)
-              xml.write_text(x, encoding="utf-8")
-          print("Saved V17 folder/weather/top-menu patches in", p)
+          print("Prepared source:", p)
           PY
-          fi
           GRADLEW="$(find . -type f -path '*/launcher/gradlew' -print -quit)"
           if [ -z "$GRADLEW" ]; then
-            echo "::error::No launcher/gradlew found in the uploaded ZIP."
-            find . -maxdepth 4 -type d | head -n 100
+            echo "::error::No launcher/gradlew found in source archive."
+            find . -maxdepth 5 -type d | head -n 100
             exit 1
           fi
           LAUNCHER_DIR="$(dirname "$GRADLEW")"
@@ -178,7 +64,7 @@ jobs:
           set -euo pipefail
           SDKMANAGER="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}" -type f -name sdkmanager 2>/dev/null | head -n 1)"
           if [ -z "$SDKMANAGER" ]; then
-            echo "::error::Android SDK manager was not found on the GitHub runner."
+            echo "::error::Android SDK manager was not found."
             exit 1
           fi
           yes | "$SDKMANAGER" --licenses >/dev/null || true
