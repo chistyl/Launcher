@@ -55,6 +55,24 @@ jobs:
           elif [ -f CleanYourTV-V12-folder-longpress-update.zip ]; then
             unzip -q -o CleanYourTV-V12-folder-longpress-update.zip -d .
           fi
+          # Repair literal line breaks accidentally embedded inside Java string literals in the weather panel.
+          MAIN_JAVA="$(find . -type f -name MainActivity.java -path '*/com/gathin/tvhome/*' -print -quit)"
+          if [ -n "$MAIN_JAVA" ]; then
+            python3 - "$MAIN_JAVA" <<'PY'
+          from pathlib import Path
+          import sys
+          p = Path(sys.argv[1])
+          s = p.read_text(encoding="utf-8")
+          bad = 'append("' + chr(10) + '");'
+          good = 'append("\\n");'
+          if bad in s:
+              s = s.replace(bad, good)
+              p.write_text(s, encoding="utf-8")
+              print("Repaired broken newline string literals in", p)
+          else:
+              print("No broken newline literals found in", p)
+          PY
+          fi
           GRADLEW="$(find . -type f -path '*/launcher/gradlew' -print -quit)"
           if [ -z "$GRADLEW" ]; then
             echo "::error::No launcher/gradlew found in the uploaded ZIP."
