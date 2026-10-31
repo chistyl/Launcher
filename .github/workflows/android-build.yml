@@ -69,6 +69,36 @@ jobs:
           import sys
           p = Path(sys.argv[1])
           s = p.read_text(encoding="utf-8")
+          # Fix Java strings that were double-escaped and displayed literal \\n.
+          s = s.replace('append("\\\\n");', 'append("\\n");')
+          # Keep imports and direct system-folder fallback in sync with the patched V17 source.
+          import_line = "import android.content.pm.PackageManager;"
+          activity_import = "import android.content.pm.ActivityInfo;"
+          if activity_import not in s:
+              s = s.replace(import_line, import_line + "\n" + activity_import)
+          marker = """        Dialog dialog = new Dialog(this);
+        LinearLayout outer = new LinearLayout(this);"""
+          fallback = """        // Some TV firmware exposes installed system apps through getLaunchIntentForPackage()
+        // but omits them from LAUNCHER and LEANBACK_LAUNCHER category queries.
+        // Resolve each remaining system-folder member directly so the folder does not appear empty.
+        if (systemFolder) {
+            for (String pkg : members) {
+                if (matches.containsKey(pkg) || prefs.getBoolean("home_hidden_" + pkg, false)) continue;
+                try {
+                    Intent launchIntent = folderPm.getLaunchIntentForPackage(pkg);
+                    if (launchIntent == null || launchIntent.getComponent() == null) continue;
+                    ActivityInfo activity = folderPm.getActivityInfo(launchIntent.getComponent(), 0);
+                    if (activity == null || !activity.exported) continue;
+                    ResolveInfo fallbackInfo = new ResolveInfo();
+                    fallbackInfo.activityInfo = activity;
+                    matches.put(pkg, fallbackInfo);
+                } catch (PackageManager.NameNotFoundException | RuntimeException ignored) { }
+            }
+        }
+
+"""
+          if marker in s and "Resolve each remaining system-folder member directly" not in s:
+              s = s.replace(marker, fallback + marker, 1)
           bad = 'append("' + chr(10) + '");'
           good = 'append("\\n");'
           if bad in s:
