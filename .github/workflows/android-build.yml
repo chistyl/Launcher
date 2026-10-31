@@ -15,6 +15,7 @@ on:
       - 'Launcher-V16.7-update-source.zip'
       - 'Launcher-V16.8-update-source.zip'
       - 'V16.9-source-download (1).zip'
+      - 'V16.9-source-fixed-v3.zip'
       - 'cleanyourtv-main/**'
       - '.github/workflows/android-build.yml'
 
@@ -32,7 +33,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f 'V16.9-source-download (1).zip' ]; then
+          if [ -f 'V16.9-source-fixed-v3.zip' ]; then
+            unzip -q -o 'V16.9-source-fixed-v3.zip' -d .
+          elif [ -f 'V16.9-source-download (1).zip' ]; then
             unzip -q -o 'V16.9-source-download (1).zip' -d .
           elif [ -f Launcher-V16.8-update-source.zip ]; then
             unzip -q -o Launcher-V16.8-update-source.zip -d .
