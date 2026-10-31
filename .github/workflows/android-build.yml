@@ -55,11 +55,15 @@ jobs:
           elif [ -f CleanYourTV-V12-folder-longpress-update.zip ]; then
             unzip -q -o CleanYourTV-V12-folder-longpress-update.zip -d .
           fi
-          if [ ! -f cleanyourtv-main/launcher/gradlew ]; then
-            echo "::error::V16.8/V16.7/V16.5/V16.4/V16.2/V16.1/V15/V14/V13 source is missing. The ZIP must contain cleanyourtv-main/launcher/gradlew."
+          GRADLEW="$(find . -type f -path '*/launcher/gradlew' -print -quit)"
+          if [ -z "$GRADLEW" ]; then
+            echo "::error::No launcher/gradlew found in the uploaded ZIP."
+            find . -maxdepth 4 -type d | head -n 100
             exit 1
           fi
-          chmod +x cleanyourtv-main/launcher/gradlew
+          LAUNCHER_DIR="$(dirname "$GRADLEW")"
+          echo "LAUNCHER_DIR=$LAUNCHER_DIR" >> "$GITHUB_ENV"
+          chmod +x "$GRADLEW"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
