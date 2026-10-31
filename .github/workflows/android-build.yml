@@ -1,4 +1,4 @@
-name: Build CleanYourTV V16.9 APK
+name: Build CleanYourTV V17 APK
 
 on:
   workflow_dispatch:
@@ -16,6 +16,7 @@ on:
       - 'Launcher-V16.8-update-source.zip'
       - 'V16.9-source-download (1).zip'
       - 'V16.9-source-fixed-v3.zip'
+      - 'CleanYourTV-V17-source.zip'
       - 'cleanyourtv-main/**'
       - '.github/workflows/android-build.yml'
 
@@ -33,7 +34,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f 'V16.9-source-fixed-v3.zip' ]; then
+          if [ -f 'CleanYourTV-V17-source.zip' ]; then
+            unzip -q -o 'CleanYourTV-V17-source.zip' -d .
+          elif [ -f 'V16.9-source-fixed-v3.zip' ]; then
             unzip -q -o 'V16.9-source-fixed-v3.zip' -d .
           elif [ -f 'V16.9-source-download (1).zip' ]; then
             unzip -q -o 'V16.9-source-download (1).zip' -d .
@@ -86,198 +89,6 @@ jobs:
           echo "LAUNCHER_DIR=$LAUNCHER_DIR" >> "$GITHUB_ENV"
           chmod +x "$GRADLEW"
 
-      - name: Fix system folder, Taoyuan weather and rounded dialog
-        shell: bash
-        run: |
-          set -euo pipefail
-          MAIN_JAVA="$(find . -type f -name MainActivity.java -path '*/com/gathin/tvhome/*' -print -quit)"
-          python3 - "$MAIN_JAVA" <<'PY'
-          from pathlib import Path
-          import sys
-          p = Path(sys.argv[1])
-          s = p.read_text(encoding="utf-8")
-
-          old = '''            JSONObject geo = getJson("https://geocoding-api.open-meteo.com/v1/search?name=" + q + "&count=1&language=zh&format=json");
-                      JSONArray results = geo.optJSONArray("results");
-                      if (results == null || results.length() == 0) throw new IOException("找不到城市：" + city);
-                      JSONObject place = results.getJSONObject(0);
-                      fetchForecast(place.getDouble("latitude"), place.getDouble("longitude"), place.optString("name", city));'''
-          new = '''            JSONObject geo = getJson("https://geocoding-api.open-meteo.com/v1/search?name=" + q + "&count=10&language=zh&format=json");
-                      JSONArray results = geo.optJSONArray("results");
-                      if (results == null || results.length() == 0) {
-                          String fallback = city;
-                          if (city.contains("桃園")) fallback = "Taoyuan";
-                          else if (city.contains("台北") || city.contains("臺北")) fallback = "Taipei";
-                          else if (city.contains("新北")) fallback = "New Taipei";
-                          else if (city.contains("台中") || city.contains("臺中")) fallback = "Taichung";
-                          else if (city.contains("台南") || city.contains("臺南")) fallback = "Tainan";
-                          else if (city.contains("高雄")) fallback = "Kaohsiung";
-                          String fq = URLEncoder.encode(fallback, "UTF-8");
-                          geo = getJson("https://geocoding-api.open-meteo.com/v1/search?name=" + fq + "&count=10&language=en&format=json");
-                          results = geo.optJSONArray("results");
-                      }
-                      if (results == null || results.length() == 0) throw new IOException("找不到城市：" + city);
-                      JSONObject place = results.getJSONObject(0);
-                      for (int i = 0; i < results.length(); i++) {
-                          JSONObject candidate = results.getJSONObject(i);
-                          if ("TW".equalsIgnoreCase(candidate.optString("country_code"))) { place = candidate; break; }
-                      }
-                      fetchForecast(place.getDouble("latitude"), place.getDouble("longitude"), city);'''
-          if old in s:
-              s = s.replace(old, new, 1)
-          elif "fallback = \"Taoyuan\"" not in s:
-              raise SystemExit("Could not locate expected city geocoding block; refusing unsafe patch")
-
-          old = '''        List<ResolveInfo> all = getPackageManager().queryIntentActivities(
-                      new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0);
-                  java.util.TreeMap<String, ResolveInfo> matches = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);'''
-          new = '''        PackageManager folderPm = getPackageManager();
-                  java.util.LinkedHashMap<String, ResolveInfo> allByPackage = new java.util.LinkedHashMap<>();
-                  List<ResolveInfo> tvLaunchers = folderPm.queryIntentActivities(
-                          new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0);
-                  List<ResolveInfo> phoneLaunchers = folderPm.queryIntentActivities(
-                          new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0);
-                  if (tvLaunchers != null) for (ResolveInfo ri : tvLaunchers)
-                      if (ri.activityInfo != null) allByPackage.put(ri.activityInfo.packageName, ri);
-                  if (phoneLaunchers != null) for (ResolveInfo ri : phoneLaunchers)
-                      if (ri.activityInfo != null && !allByPackage.containsKey(ri.activityInfo.packageName))
-                          allByPackage.put(ri.activityInfo.packageName, ri);
-                  List<ResolveInfo> all = new ArrayList<>(allByPackage.values());
-                  java.util.TreeMap<String, ResolveInfo> matches = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);'''
-          if old in s:
-              s = s.replace(old, new, 1)
-          elif "phoneLaunchers = folderPm.queryIntentActivities" not in s:
-              raise SystemExit("Could not locate expected folder launcher query; refusing unsafe patch")
-
-          old = '''        new AlertDialog.Builder(this).setTitle("一週天氣").setView(content).setNegativeButton("取消", null)
-                      .setPositiveButton("儲存", (dialog, which) -> {
-                          boolean useCity = modes.getCheckedRadioButtonId() == cityMode.getId();
-                          String value = city.getText().toString().trim();
-                          prefs.edit().putBoolean("enabled", toggle.isChecked()).putString("location_mode", useCity ? "city" : "device")
-                                  .putString("city", value.isEmpty() ? "桃園市" : value).apply();
-                          refreshWeeklyWeatherVisibility();
-                      }).show();'''
-          new = '''        AlertDialog weatherDialog = new AlertDialog.Builder(this).setTitle("一週天氣").setView(content).setNegativeButton("取消", null)
-                      .setPositiveButton("儲存", (dialog, which) -> {
-                          boolean useCity = modes.getCheckedRadioButtonId() == cityMode.getId();
-                          String value = city.getText().toString().trim();
-                          prefs.edit().putBoolean("enabled", toggle.isChecked()).putString("location_mode", useCity ? "city" : "device")
-                                  .putString("city", value.isEmpty() ? "桃園市" : value).apply();
-                          refreshWeeklyWeatherVisibility();
-                      }).create();
-                  weatherDialog.setOnShowListener(ignored -> {
-                      android.graphics.drawable.GradientDrawable rounded = new android.graphics.drawable.GradientDrawable();
-                      rounded.setColor(Color.rgb(58, 62, 70));
-                      rounded.setCornerRadius(22 * density);
-                      rounded.setStroke(Math.max(1, (int) density), 0x30FFFFFF);
-                      if (weatherDialog.getWindow() != null) weatherDialog.getWindow().setBackgroundDrawable(rounded);
-                  });
-                  weatherDialog.show();'''
-          if old in s:
-              s = s.replace(old, new, 1)
-          elif "weatherDialog.setOnShowListener" not in s:
-              raise SystemExit("Could not locate weather dialog; refusing unsafe patch")
-
-          p.write_text(s, encoding="utf-8")
-          print("Patched system folder app lookup, Taiwan city geocoding fallback and rounded weather dialog:", p)
-          PY
-
-      - name: Fix system folder package visibility and Taoyuan weather
-        shell: bash
-        run: |
-          set -euo pipefail
-          MAIN_JAVA="$(find . -type f -name MainActivity.java -path '*/com/gathin/tvhome/*' -print -quit)"
-          MANIFEST="$(find . -type f -name AndroidManifest.xml -path '*/launcher/app/src/main/*' -print -quit)"
-          python3 - "$MAIN_JAVA" "$MANIFEST" <<'PY'
-          from pathlib import Path
-          import sys
-          jp, mp = Path(sys.argv[1]), Path(sys.argv[2])
-          s = jp.read_text(encoding="utf-8")
-          # System folder: enumerate installed system packages and resolve both TV and standard launchable activities.
-          old = '''            List<ResolveInfo> installed = getPackageManager().queryIntentActivities(
-                              new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0);'''
-          new = '''            PackageManager systemPm = getPackageManager();
-                      List<ApplicationInfo> installed = systemPm.getInstalledApplications(PackageManager.MATCH_ALL);'''
-          if old in s: s=s.replace(old,new,1)
-          elif "getInstalledApplications(PackageManager.MATCH_ALL)" not in s:
-              raise SystemExit("System folder installed-app enumeration block not found")
-          old = '''            for (ResolveInfo ri : installed) {
-                          if (ri.activityInfo == null || !ri.activityInfo.exported || ri.activityInfo.packageName.equals(getPackageName())) continue;
-                          try {
-                              int flags = getPackageManager().getApplicationInfo(ri.activityInfo.packageName, 0).flags;
-                              if ((flags & (ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
-                                      && !excluded.contains(ri.activityInfo.packageName)) current.add(ri.activityInfo.packageName);
-                          } catch (PackageManager.NameNotFoundException ignored) { }
-                      }'''
-          new = '''            for (ApplicationInfo app : installed) {
-                          if (app == null || app.packageName == null || app.packageName.equals(getPackageName())) continue;
-                          int flags = app.flags;
-                          if ((flags & (ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
-                                  && !excluded.contains(app.packageName)) {
-                              Intent tvIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER).setPackage(app.packageName);
-                              Intent phoneIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(app.packageName);
-                              List<ResolveInfo> tvMatches = systemPm.queryIntentActivities(tvIntent, PackageManager.MATCH_ALL);
-                              List<ResolveInfo> phoneMatches = systemPm.queryIntentActivities(phoneIntent, PackageManager.MATCH_ALL);
-                              if ((tvMatches != null && !tvMatches.isEmpty()) || (phoneMatches != null && !phoneMatches.isEmpty()))
-                                  current.add(app.packageName);
-                          }
-                      }'''
-          if old in s: s=s.replace(old,new,1)
-          elif "List<ResolveInfo> tvMatches" not in s:
-              raise SystemExit("System folder package filter block not found")
-          # Use fixed Taiwan coordinates for common city names; Taoyuan no longer depends on geocoder localization.
-          start=s.find("    private void fetchCityForecast(String city) {")
-          end=s.find("    private void fetchForecast(", start)
-          if start < 0 or end < 0: raise SystemExit("Weather city method boundaries not found")
-          method='''    private void fetchCityForecast(String city) {
-                  try {
-                      String normalized = city == null ? "" : city.trim();
-                      double lat, lon;
-                      String display = normalized;
-                      if (normalized.contains("桃園") || normalized.equalsIgnoreCase("Taoyuan") || normalized.equalsIgnoreCase("Taoyuan City")) {
-                          lat = 24.9936; lon = 121.3010; display = "桃園市";
-                      } else if (normalized.contains("台北") || normalized.contains("臺北") || normalized.equalsIgnoreCase("Taipei")) {
-                          lat = 25.0330; lon = 121.5654; display = "台北市";
-                      } else if (normalized.contains("新北") || normalized.equalsIgnoreCase("New Taipei")) {
-                          lat = 25.0169; lon = 121.4628; display = "新北市";
-                      } else if (normalized.contains("台中") || normalized.contains("臺中") || normalized.equalsIgnoreCase("Taichung")) {
-                          lat = 24.1477; lon = 120.6736; display = "台中市";
-                      } else if (normalized.contains("台南") || normalized.contains("臺南") || normalized.equalsIgnoreCase("Tainan")) {
-                          lat = 22.9999; lon = 120.2269; display = "台南市";
-                      } else if (normalized.contains("高雄") || normalized.equalsIgnoreCase("Kaohsiung")) {
-                          lat = 22.6273; lon = 120.3014; display = "高雄市";
-                      } else {
-                          String q = URLEncoder.encode(normalized, "UTF-8");
-                          JSONObject geo = getJson("https://geocoding-api.open-meteo.com/v1/search?name=" + q + "&count=20&language=en&format=json");
-                          JSONArray results = geo.optJSONArray("results");
-                          if (results == null || results.length() == 0) throw new IOException("找不到城市：" + city);
-                          JSONObject place = null;
-                          for (int i = 0; i < results.length(); i++) {
-                              JSONObject candidate = results.getJSONObject(i);
-                              if ("TW".equalsIgnoreCase(candidate.optString("country_code"))) { place = candidate; break; }
-                          }
-                          if (place == null) place = results.getJSONObject(0);
-                          lat = place.getDouble("latitude"); lon = place.getDouble("longitude");
-                      }
-                      fetchForecast(lat, lon, display);
-                  } catch (Exception e) { showWeatherError("城市定位失敗：" + e.getMessage()); }
-              }
-
-          '''
-          s=s[:start]+method+s[end:]
-          jp.write_text(s,encoding="utf-8")
-          m=mp.read_text(encoding="utf-8")
-          if "android.permission.QUERY_ALL_PACKAGES" not in m:
-              m=m.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android"',
-                          '<manifest xmlns:android="http://schemas.android.com/apk/res/android"',1)
-              insert='    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />\n'
-              pos=m.find("    <application")
-              if pos < 0: raise SystemExit("Manifest application node not found")
-              m=m[:pos]+insert+m[pos:]
-          mp.write_text(m,encoding="utf-8")
-          print("Fixed system folder package enumeration and direct Taiwan city coordinates")
-          PY
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -296,14 +107,14 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Build debug APK
+      - name: Build V17 debug APK
         working-directory: ${{ env.LAUNCHER_DIR }}
         run: ./gradlew --no-daemon assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CleanYourTV-V16.9-debug-apk
+          name: CleanYourTV-V17-debug-apk
           path: ${{ env.LAUNCHER_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
