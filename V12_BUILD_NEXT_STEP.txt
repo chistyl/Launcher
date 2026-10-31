@@ -1,0 +1,18 @@
+CleanYourTV V12 - APK build instructions
+
+This package includes .github/workflows/android-build.yml for GitHub Actions.
+
+To build:
+1. Upload/extract this project to a GitHub repository (the repository root must contain
+   the .github folder and launcher folder).
+2. Open the repository's Actions tab.
+3. Select "Build CleanYourTV V12 APK" and choose "Run workflow".
+4. When the workflow completes, open the run and download the artifact
+   "CleanYourTV-V12-debug-apk".
+5. The APK inside is app-debug.apk.
+
+The current ChatGPT build container has Java 21 but no Android SDK and cannot resolve
+services.gradle.org, so local APK compilation is blocked here. This workflow provisions
+JDK 17, Gradle, Android SDK 34 on GitHub-hosted runners.
+
+This is a debug-signed APK intended for sideload/testing, not a Play Store release.
