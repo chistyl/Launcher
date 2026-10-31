@@ -83,7 +83,7 @@ jobs:
               "        // Resolve each remaining system-folder member directly so the folder does not appear empty.",
               "        if (systemFolder) {",
               "            for (String pkg : members) {",
-              "                if (matches.containsKey(pkg) || prefs.getBoolean(\\"home_hidden_\\" + pkg, false)) continue;",
+              '                if (matches.containsKey(pkg) || prefs.getBoolean("home_hidden_" + pkg, false)) continue',
               "                try {",
               "                    Intent launchIntent = folderPm.getLaunchIntentForPackage(pkg);",
               "                    if (launchIntent == null || launchIntent.getComponent() == null) continue;",
