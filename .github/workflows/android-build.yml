@@ -225,22 +225,6 @@ jobs:
           if old in s: s=s.replace(old,new,1)
           elif "List<ResolveInfo> tvMatches" not in s:
               raise SystemExit("System folder package filter block not found")
-          # Resolve apps per package with MATCH_ALL, avoiding relying only on the global launcher query.
-          old = '''            List<ResolveInfo> all = new ArrayList<>(allByPackage.values());'''
-          new = '''            List<ResolveInfo> all = new ArrayList<>(allByPackage.values());
-                  for (String packageName : members) {
-                      if (allByPackage.containsKey(packageName)) continue;
-                      Intent tvIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER).setPackage(packageName);
-                      Intent phoneIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(packageName);
-                      List<ResolveInfo> tvMatches = folderPm.queryIntentActivities(tvIntent, PackageManager.MATCH_ALL);
-                      List<ResolveInfo> phoneMatches = folderPm.queryIntentActivities(phoneIntent, PackageManager.MATCH_ALL);
-                      if (tvMatches != null && !tvMatches.isEmpty()) allByPackage.put(packageName, tvMatches.get(0));
-                      else if (phoneMatches != null && !phoneMatches.isEmpty()) allByPackage.put(packageName, phoneMatches.get(0));
-                  }
-                  all = new ArrayList<>(allByPackage.values());'''
-          if old in s: s=s.replace(old,new,1)
-          elif "for (String packageName : members)" not in s:
-              raise SystemExit("System folder package resolution insertion point not found")
           # Use fixed Taiwan coordinates for common city names; Taoyuan no longer depends on geocoder localization.
           start=s.find("    private void fetchCityForecast(String city) {")
           end=s.find("    private void fetchForecast(", start)
