@@ -80,8 +80,12 @@ jobs:
 
           """
               s = s.replace("    private String weatherLabel(int code)", helper + "    private String weatherLabel(int code)", 1)
-          # V16.8-style folder layout: three equal columns with symmetric outer gutters.
-          s = s.replace("int folderColumns = 4;", "int folderColumns = 3;")
+          # Exactly four V16.8-sized tiles per row; center the four-column group for equal outer gutters.
+          s = s.replace("int folderColumns = 3;", "int folderColumns = 4;")
+          s = s.replace("int folderTileDp = Math.max(96, Math.min(220, (availableWidthDp - 48) / folderColumns));",
+                        "int folderTileDp = Math.max(72, Math.min(140, (availableWidthDp - 48) / folderColumns));")
+          s = s.replace("grid.setColumnCount(folderColumns);",
+                        "grid.setColumnCount(folderColumns);\\n        grid.setGravity(Gravity.CENTER_HORIZONTAL);")
           # The top bar must not retain ALIGN_BOTTOM from XML when ALIGN_TOP is applied at runtime.
           s = s.replace("tlp.addRule(RelativeLayout.ALIGN_TOP, R.id.leftBlock);",
                         "tlp.addRule(RelativeLayout.ALIGN_TOP, R.id.leftBlock);\\n            tlp.addRule(RelativeLayout.ALIGN_BOTTOM, 0);")
@@ -107,12 +111,15 @@ jobs:
           """
               s = s.replace("    private String weatherLabel(int code)", style_helper + "    private String weatherLabel(int code)", 1)
           p.write_text(s, encoding="utf-8")
-          # Keep Wi-Fi/settings at the top of the header instead of bottom-aligning with the taller weather block.
-          for xml in p.parent.parent.parent.glob("**/res/layout/activity_main.xml"):
+          # XML lives under app/res, not under the Java package directory.
+          app_dir = p.parents[6]
+          xml = app_dir / "src/main/res/layout/activity_main.xml"
+          if xml.exists():
               x = xml.read_text(encoding="utf-8")
               x = x.replace('android:layout_alignBottom="@id/leftBlock"\\n                android:layout_marginBottom="6dp"',
                             'android:layout_alignParentTop="true"\\n                android:layout_marginTop="10dp"')
               xml.write_text(x, encoding="utf-8")
+              print("Updated topButtons in", xml)
           print("Applied V16.8 folder, weather icons, and top-button positioning.")
 
           print("Prepared source:", p)
