@@ -1,0 +1,56 @@
+name: Build CleanYourTV V12 APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'CleanYourTV-V12-folder-longpress-update.zip'
+      - 'cleanyourtv-main/**'
+      - '.github/workflows/android-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f CleanYourTV-V12-folder-longpress-update.zip ]; then
+            unzip -q CleanYourTV-V12-folder-longpress-update.zip -d .
+          fi
+          if [ ! -f cleanyourtv-main/launcher/gradlew ]; then
+            echo "::error::V12 source is missing. Upload CleanYourTV-V12-folder-longpress-update.zip to the repository root or extract it so cleanyourtv-main/launcher/gradlew exists."
+            exit 1
+          fi
+          chmod +x cleanyourtv-main/launcher/gradlew
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 34
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Build debug APK
+        working-directory: cleanyourtv-main/launcher
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CleanYourTV-V12-debug-apk
+          path: cleanyourtv-main/launcher/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
