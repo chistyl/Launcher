@@ -80,6 +80,32 @@ jobs:
 
           """
               s = s.replace("    private String weatherLabel(int code)", helper + "    private String weatherLabel(int code)", 1)
+          # V16.8-style folder layout: three equal columns with symmetric outer gutters.
+          s = s.replace("int folderColumns = 4;", "int folderColumns = 3;")
+          # The top bar must not retain ALIGN_BOTTOM from XML when ALIGN_TOP is applied at runtime.
+          s = s.replace("tlp.addRule(RelativeLayout.ALIGN_TOP, R.id.leftBlock);",
+                        "tlp.addRule(RelativeLayout.ALIGN_TOP, R.id.leftBlock);\\n            tlp.addRule(RelativeLayout.ALIGN_BOTTOM, 0);")
+          # Make weather glyphs visually prominent, closer to the supplied reference rather than tiny inline symbols.
+          weather_set = 'weeklyWeatherView.setText(result);'
+          weather_replacement = 'weeklyWeatherView.setText(styleWeatherForecast(result));'
+          s = s.replace(weather_set, weather_replacement)
+          if "private CharSequence styleWeatherForecast(String value)" not in s:
+              style_helper = """    private CharSequence styleWeatherForecast(String value) {
+                  android.text.SpannableStringBuilder styled = new android.text.SpannableStringBuilder(value);
+                  String[] icons = {"☀️", "🌤️", "☁️", "🌫️", "🌧️", "❄️", "🌦️", "⛈️", "🌡️"};
+                  for (String icon : icons) {
+                      int from = 0;
+                      while ((from = value.indexOf(icon, from)) >= 0) {
+                          styled.setSpan(new android.text.style.RelativeSizeSpan(1.55f), from,
+                                  from + icon.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                          from += icon.length();
+                      }
+                  }
+                  return styled;
+              }
+
+          """
+              s = s.replace("    private String weatherLabel(int code)", style_helper + "    private String weatherLabel(int code)", 1)
           p.write_text(s, encoding="utf-8")
           # Keep Wi-Fi/settings at the top of the header instead of bottom-aligning with the taller weather block.
           for xml in p.parent.parent.parent.glob("**/res/layout/activity_main.xml"):
