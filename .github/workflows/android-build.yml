@@ -83,6 +83,19 @@ jobs:
           echo "LAUNCHER_DIR=$LAUNCHER_DIR" >> "$GITHUB_ENV"
           chmod +x "$GRADLEW"
 
+      - name: Inspect folder and weather implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAIN_JAVA="$(find . -type f -name MainActivity.java -path '*/com/gathin/tvhome/*' -print -quit)"
+          echo "MAIN_JAVA=$MAIN_JAVA"
+          grep -n -i -E 'weather|一週天氣|system folder|系統|folder' "$MAIN_JAVA" | tail -n 100 || true
+          echo "===== WEATHER CODE ====="
+          WLINE="$(grep -n '一週天氣' "$MAIN_JAVA" | head -n 1 | cut -d: -f1 || true)"
+          if [ -n "$WLINE" ]; then sed -n "$((WLINE-35)),$((WLINE+180))p" "$MAIN_JAVA"; fi
+          echo "===== FOLDER CODE ====="
+          grep -R -n -E 'systemFolder|SYSTEM_FOLDER|系統資料夾|system folder' "$(dirname "$MAIN_JAVA")" | head -n 100 || true
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
